@@ -16,7 +16,7 @@ using JSON
 
 
 global victims=[]
-consts, paramset = Simedis.constants_from_file("paramsetDemo.toml")
+consts, paramset = Simedis.constants_from_file("paramsetGen.toml")
 
 
 data =JSON.parsefile("scenario.json")
@@ -32,8 +32,8 @@ fmp = [hospital["coords"] for hospital in hospitals]
 home_coord = home
 home=[[50.8467, 4.3525],[50.8467, 4.3525]]
 locationUTM,fmpUTM,ccpUTM,homeUTM,ccp_LLA,fmp_LLA,home_LLA,locations_LLA= Simedis.setCoords(locations,ccp,fmp,home,consts.quadrant)
-println(locationUTM,fmpUTM,ccpUTM,homeUTM,ccp_LLA,fmp_LLA,home_LLA,locations_LLA)
-m=Simedis.SetMap("demo.osm") #peu importe
+
+m=Simedis.SetMap("bx.osm") #peu importe
 
 
 routes = Vector{Vector{Int}}()
