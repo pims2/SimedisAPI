@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SQLite DB Browser</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">Simedis UI</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</nav>
+
+<div class="container">
+    <h1 class="mb-4">SQLite Database Browser</h1>
+
+    <form method="post" action="/db_browser" class="row g-3 mb-4">
+        <div class="col-md-6">
+            <label for="db_path" class="form-label">Database File</label>
+            <select class="form-select" id="db_path" name="db_path" required>
+                <option value="">-- Select a database file --</option>
+                {% for db in db_files %}
+                    <option value="{{ db }}" {% if db == selected_db %}selected{% endif %}>{{ db | replace(folder_path + '/', '') }}</option>
+                {% endfor %}
+            </select>
+            <div class="form-text">Detected `.sqlite` files in {{ folder_path }}</div>
+        </div>
+
+        <div class="col-md-4">
+            <label for="table_name" class="form-label">Select Table</label>
+            <select id="table_name" name="table_name" class="form-select">
+                <option value="" {% if not selected_table %}selected{% endif %}>-- Choose Table --</option>
+                {% for table in tables %}
+                    <option value="{{ table }}" {% if table == selected_table %}selected{% endif %}>{{ table }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary w-100">Browse</button>
+        </div>
+    </form>
+
+    {% if rows and headers %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover table-bordered">
+            <thead class="table-light">
+                <tr>
+                    {% for h in headers %}
+                    <th>{{ h }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+</div>
+
+<footer class="bg-light text-center text-muted py-3 mt-5">
+    <div class="container">
+        &copy; {{ now.year }} Simedis UI
+    </div>
+</footer>
+
+<!-- Bootstrap JS Bundle with Popper -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

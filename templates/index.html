@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SIMEDIS Scenario Generator</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+  <link rel="icon" href="/icons/icon.png" type="image/png" />
+  <style>
+    body { font-family: sans-serif; }
+    #map, #simedisHtmlContent { height: 540px; }
+    #controls {
+      margin: 10px auto;
+      max-width: 900px;
+      text-align: center;
+    }
+    select, button {
+      padding: 6px 12px;
+      margin: 6px;
+      font-size: 14px;
+    }
+    #routeInfo, #loading {
+      margin: 10px auto;
+      font-weight: bold;
+      font-size: 16px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <header style="text-align: center; padding: 10px;">
+    <h1>SIMEDIS Scenario Generator</h1>
+  </header>
+
+  <div id="controls">
+    <select id="type">
+      <option value="threat">Threat</option>
+      <option value="hospital">Hospital</option>
+      <option value="ccp">Casualty Collection Point</option>
+    </select>
+    <select id="threatType">
+      <option value="artillery strike">Artillery Strike</option>
+      <option value="drone strike">Drone Strike</option>
+      <option value="GB release">GB Release</option>
+    </select>
+    <select id="hospitalType">
+      <option value="role 1">Role 1</option>
+      <option value="role 2">Role 2</option>
+      <option value="role 3">Role 3</option>
+    </select>
+    <select id="travelProfile">
+      <option value="car">Car (default)</option>
+      <option value="foot">Walking</option>
+      <option value="bike">Bike</option>
+      <option value="truck">Truck</option>
+    </select>
+    <button onclick="submitData()">Save JSON</button>
+    <button onclick="createScenario()">Run Custom Scenario</button>
+    <button onclick="runScenario()">Run Scenario</button>
+    <pre id="runOutput"></pre>
+    <button onclick="generatePatients()">Generate Patients</button>
+    <button onclick="clearRoute()">Clear Route</button>
+    <button id="plotVictimsBtn">Plot Victims</button>
+    <button id="loadHospitalsBtn">Load Hospitals</button>
+    <label style="margin-left:10px;">
+      <input type="checkbox" id="includeRoute" checked> Include Route in JSON
+    </label>
+    <a href="/db_browser">🧠 Browse SQLite Databases</a>
+  </div>
+  <!-- Live status message -->
+  <div id="status" style="display:none; font-weight: bold; color: blue; margin-top: 1em;"></div>
+
+  <!-- Output display area -->
+  <div id="output" style="display:none; white-space: pre-wrap; background: #f9f9f9; padding: 1em; border: 1px solid #ccc; margin-top: 1em;"></div>
+
+  <div id="routeInfo">Distance: N/A, ETA: N/A</div>
+  <div id="loading" style="display:none">Loading victims...</div>
+  <div id="generationOutput" style="white-space: pre; margin-top: 1rem;"></div>
+  
+
+  <div id="map"></div>
+
+  <!-- <div id="simedisHtmlOutput" style="margin:10px; padding:10px; border:1px solid #ccc; background:#fff;">
+    <h2>SIMEDIS Output</h2>
+    <div id="simedisConsoleOutput" style="font-family:monospace; background:#f0f0f0; padding:10px; margin-bottom:10px; border:1px solid #ccc;"></div>
+    <div id="simedisHtmlContent"></div>
+  </div> -->
+
+  <input type="file" id="htmlFileInput" accept=".html" />
+  
+  <div id="simedis-output" style="width:100%; height:1080px; border:1px solid #ccc;"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.min.js"></script>
+  <script>
+    let map, routingControl = null, polyline = null;
+    const markersData = [], routePoints = [];
+    let currentRouteGeoJSON = null;
+
+    const icons = {
+      "artillery strike": L.icon({ iconUrl: 'icons/shell.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "drone strike": L.icon({ iconUrl: 'icons/drone.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "GB release": L.icon({ iconUrl: 'icons/c.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "role 1": L.icon({ iconUrl: 'icons/role1.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "role 2": L.icon({ iconUrl: 'icons/role2.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "role 3": L.icon({ iconUrl: 'icons/role3.png', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      "ccp": L.icon({ iconUrl: 'icons/ccp.png', iconSize: [32, 32], iconAnchor: [16, 32] })
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      setupControls();
+      setupFileLoader();
+    });
+
+    function initMap() {
+      map = L.map('map').setView([50.85, 4.35], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      map.on('click', addMarker);
+    }
+
+    function setupControls() {
+      const typeSelect = document.getElementById('type');
+      const threatType = document.getElementById('threatType');
+      const hospitalType = document.getElementById('hospitalType');
+
+      typeSelect.addEventListener('change', () => {
+        threatType.style.display = (typeSelect.value === 'threat') ? 'inline' : 'none';
+        hospitalType.style.display = (typeSelect.value === 'hospital') ? 'inline' : 'none';
+        if (typeSelect.value === 'ccp') {
+        threatType.style.display = 'none';
+        hospitalType.style.display = 'none';
+        }
+      });
+
+      document.getElementById('loadHospitalsBtn').addEventListener('click', loadHospitals);
+      document.getElementById('plotVictimsBtn').addEventListener('click', plotVictims);
+      document.getElementById('travelProfile').addEventListener('change', createRoute);
+            
+    }
+    function setupFileLoader() {
+      document.getElementById("htmlFileInput").addEventListener("change", function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const blob = new Blob([e.target.result], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+
+          let iframe = document.getElementById("simedis-iframe");
+          if (!iframe) {
+            iframe = document.createElement("iframe");
+            iframe.id = "simedis-iframe";
+            iframe.style.width = "100%";
+            iframe.style.height = "100%";
+            iframe.style.border = "none";
+            document.getElementById("simedis-output").innerHTML = "";
+            document.getElementById("simedis-output").appendChild(iframe);
+          }
+          iframe.src = url;
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    function addMarker(e) {
+      const type = document.getElementById('type').value;
+      let subtype = "";
+      let icon = null;
+
+      if (type === 'threat') {
+        subtype = document.getElementById('threatType').value;
+        icon = icons[subtype];
+      } else if (type === 'hospital') {
+        subtype = document.getElementById('hospitalType').value;
+        icon = icons[subtype];
+      }  else if (type === 'ccp') {
+        subtype = 'ccp';
+        icon = icons['ccp'];
+      }
+
+      L.marker(e.latlng, { icon }).addTo(map)
+        .bindPopup(`${type} (${subtype}) at ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`).openPopup();
+
+      markersData.push({ category: type, subtype, lat: e.latlng.lat, lng: e.latlng.lng });
+      routePoints.push(L.latLng(e.latlng.lat, e.latlng.lng));
+      createRoute();
+    }
+    function triageColor(triage) {
+      switch(triage) {
+        case "T1": return "red";
+        case "T2": return "orange";
+        case "T3": return "green";
+        case "Dead": return "black";
+        default: return "blue";
+      }
+    }
+
+    function createRoute() {
+      if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+      if (polyline) { map.removeLayer(polyline); polyline = null; }
+
+      if (routePoints.length < 2) {
+        currentRouteGeoJSON = null;
+        document.getElementById('routeInfo').textContent = "Distance: N/A, ETA: N/A";
+        return;
+      }
+
+      routingControl = L.Routing.control({
+        waypoints: routePoints,
+        router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1', profile: document.getElementById('travelProfile').value }),
+        addWaypoints: false,
+        show: false,
+        createMarker: () => null
+      }).addTo(map);
+
+      routingControl.on('routesfound', function(e) {
+        const route = e.routes[0];
+        document.getElementById('routeInfo').textContent =
+          `Distance: ${(route.summary.totalDistance/1000).toFixed(2)} km, ETA: ${(route.summary.totalTime/60).toFixed(1)} min`;
+        currentRouteGeoJSON = { type: "LineString", coordinates: route.coordinates.map(c => [c.lng, c.lat]) };
+        polyline = L.polyline(route.coordinates, { color: 'blue' }).addTo(map);
+      });
+    }
+    async function createScenario() {
+      const scenarioName = prompt("Enter scenario name (e.g. demo):", "demo");
+      if (!scenarioName) return;
+
+      const statusEl = document.getElementById('status');
+      const outputEl = document.getElementById('output');
+
+      statusEl.innerText = `⏳ Running scenario "${scenarioName}"...`;
+      statusEl.style.display = 'block';
+      outputEl.style.display = 'none';
+      outputEl.innerHTML = '';
+
+      try {
+        const res = await fetch('/run_scenario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario: scenarioName })
+        });
+
+        if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
+
+        const result = await res.json();
+
+        outputEl.innerHTML = `
+          <h3>✅ Scenario "${scenarioName}" Complete</h3>
+          <pre><strong>STDOUT:</strong>\n${result.stdout || '(no output)'}\n\n<strong>STDERR:</strong>\n${result.stderr || '(no errors)'}</pre>
+        `;
+        outputEl.style.display = 'block';
+      } catch (err) {
+        console.error('Scenario run failed:', err);
+        outputEl.innerHTML = `<h3 style="color: red;">❌ Failed to run scenario</h3><pre>${err}</pre>`;
+        outputEl.style.display = 'block';
+      } finally {
+        statusEl.style.display = 'none';
+      }
+  }
+    function loadHospitals() {
+      const query = `[out:json][timeout:25];area["ISO3166-1"="BE"][admin_level=2]->.searchArea;` +
+                    `(node["amenity"="hospital"]["emergency"="yes"](area.searchArea);` +
+                    `way["amenity"="hospital"]["emergency"="yes"](area.searchArea);` +
+                    `relation["amenity"="hospital"]["emergency"="yes"](area.searchArea););out center;`;
+      fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query))
+        .then(res => res.json())
+        .then(data => {
+          data.elements.forEach(el => {
+            const lat = el.lat || el.center?.lat;
+            const lon = el.lon || el.center?.lon;
+            if (lat && lon) {
+              L.marker([lat, lon], { icon: icons['role 3'] })
+                .addTo(map)
+                .bindPopup(el.tags?.name || 'Hospital');
+            }
+          });
+        })
+        .catch(err => alert("Failed to load hospitals: " + err));
+    }
+    async function generatePatients() {
+      try {
+        const response = await fetch('/generate_patients', {
+          method: 'POST'
+        });
+        const data = await response.json();
+        document.getElementById("generationOutput").textContent =
+          "STDOUT:\n" + data.stdout + "\n\nSTDERR:\n" + data.stderr;
+      } catch (err) {
+        console.error(err);
+        document.getElementById("generationOutput").textContent = "Error: " + err;
+      }
+    }
+    async function runScenario() {
+      const payload = {
+        json_path: "scenario.json",
+        osm_path: "demo.osm",
+        julia_script: "demo.jl"
+      };
+      try {
+        const res = await fetch('/run_scenario', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        document.getElementById("runOutput").textContent =
+          "STDOUT:\n" + data.stdout + "\n\nSTDERR:\n" + data.stderr;
+      } catch (err) {
+        document.getElementById("runOutput").textContent = "Error: " + err;
+      }
+    }
+
+    async function plotVictims() {
+      document.getElementById('loading').style.display = 'block';
+
+      // Clear previous victim dots if any
+      if (window.victimLayerGroup) {
+        window.victimLayerGroup.clearLayers();
+      } else {
+        window.victimLayerGroup = L.layerGroup().addTo(map);
+      }
+
+      try {
+        const res = await fetch('http://localhost:8000/get_victims');
+        const data = await res.json();
+        let count = 0;
+
+        function triageColor(triage) {
+          switch (triage) {
+            case "1": return "red";
+            case "2": return "orange";
+            case "3": return "green";
+            case "4": return "black";
+            default: return "blue";
+          }
+        }
+
+        data.victims.forEach((victim) => {
+          if (!victim.lat || !victim.lng) {
+            console.log("Skipped invalid victim data:", victim);
+            return;  // skip this victim
+          }
+
+          if (typeof victim.lat === "number" && typeof victim.lng === "number") {
+            const dot = L.circleMarker([victim.lat, victim.lng], {
+              radius: 5,
+          fillColor: triageColor(victim.triage),
+          color: triageColor(victim.triage),
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.8,
+        }).bindPopup(`
+          <b>ID:</b> ${victim.id}<br>
+          <b>Triage:</b> ${victim.triage}<br>
+          <b>ISS:</b> ${victim.ISS}<br>
+          <b>Lat:</b> ${victim.lat.toFixed(5)}<br>
+          <b>Lng:</b> ${victim.lng.toFixed(5)}
+        `);
+
+            window.victimLayerGroup.addLayer(dot);
+            count++;
+          } else {
+            console.warn("Skipped invalid victim data (not numbers):", victim);
+          }
+        });
+
+        alert(`${count} victims plotted.`);
+      } catch (err) {
+        alert("Error loading victims: " + err);
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+    function submitData() {
+
+      const statusEl = document.getElementById('status');
+      statusEl.style.display = 'block';
+      const payload = {
+        travelProfile: document.getElementById('travelProfile').value,
+        locations: markersData,   // <-- this is the important part
+        route: document.getElementById('includeRoute').checked ? currentRouteGeoJSON : null
+      };
+
+      fetch('http://localhost:8000/save_coordinates', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),  // make sure you stringify this object
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not OK');
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("Response from save_coordinates:", data);
+        alert(`Saved scenario: ${data.file}`);
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert("Save failed: " + error.message);
+      });
+    }
+   
+
+    function clearRoute() {
+      routePoints.length = 0;
+      markersData.length = 0;
+      if (routingControl) map.removeControl(routingControl);
+      if (polyline) map.removeLayer(polyline);
+      currentRouteGeoJSON = null;
+      document.getElementById('routeInfo').textContent = "Distance: N/A, ETA: N/A";
+      map.eachLayer(layer => { if (layer instanceof L.Marker) map.removeLayer(layer); });
+    }
+
+    // function runJuliaScript() {
+    //   const consoleOut = document.getElementById('simedisConsoleOutput');
+    //   const htmlContent = document.getElementById('simedisHtmlContent');
+    //   consoleOut.innerHTML = '<em>Running Julia script...</em>';
+    //   htmlContent.innerHTML = '';
+    //   fetch('http://localhost:8000/run_julia', { method: 'POST' })
+    //     .then(res => res.json())
+    //     .then(data => {
+    //       consoleOut.innerHTML = `${data.stdout ? '<pre>' + data.stdout + '</pre>' : ''}` +
+    //                              `${data.stderr ? '<pre style="color:red;">' + data.stderr + '</pre>' : ''}`;
+    //       htmlContent.innerHTML = data.html || '<em>No HTML output.</em>';
+    //     })
+    //     .catch(err => consoleOut.innerHTML = `<span style='color:red;'>Error: ${err}</span>`);
+    // }
+  </script>
+</body>
+</html>
