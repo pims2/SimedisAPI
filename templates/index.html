@@ -253,6 +253,23 @@
 
       <a href="/db_browser" aria-label="Browse SQLite Databases">🧠 Browse SQLite Databases</a>
     </section>
+    <section id="configureThreatSection" aria-label="Configure Threat">
+      <h3>Configure Threat</h3>
+
+      <label for="threatHits">Number of Hits:</label>
+      <input type="number" id="threatHits" name="threatHits" min="1" value="3" aria-label="Number of Hits" />
+
+      <label for="victimsPerHit">Victims per Hit:</label>
+      <input type="number" id="victimsPerHit" name="victimsPerHit" min="1" value="13" aria-label="Victims per Hit" />
+
+      <label for="threatRadius">Radius of Effect (m):</label>
+      <input type="number" id="threatRadius" name="threatRadius" min="1" value="40" aria-label="Threat Radius in meters" />
+
+      <label for="threatDuration">Duration (minutes):</label>
+      <input type="number" id="threatDuration" name="threatDuration" min="1" value="1" aria-label="Threat duration in minutes" />
+
+      <button type="button" onclick="applyThreatConfig()" aria-label="Apply threat configuration">Apply Threat Configuration</button>
+    </section>
 
     <section id="status" aria-live="polite" role="status" style="display:none;"></section>
 
@@ -374,7 +391,28 @@
         default: return "blue";
       }
     }
+    const threatConfig = {
+      hits: 3,
+      victimsPerHit: 13,
+      radius: 40.0
+    };
 
+    function openThreatConfig() {
+      document.getElementById('threatConfigModal').style.display = 'block';
+    }
+
+    function closeThreatConfig() {
+      document.getElementById('threatConfigModal').style.display = 'none';
+    }
+
+    function saveThreatConfig() {
+      threatConfig.hits = parseInt(document.getElementById('hitsInput').value);
+      threatConfig.victimsPerHit = parseInt(document.getElementById('victimsPerHitInput').value);
+      threatConfig.radius = parseFloat(document.getElementById('radiusInput').value);
+      
+      alert(`Saved Threat Configuration:\nHits: ${threatConfig.hits}\nVictims/Hit: ${threatConfig.victimsPerHit}\nRadius: ${threatConfig.radius}m`);
+      closeThreatConfig();
+    }
     function createRoute() {
       if (routingControl) { map.removeControl(routingControl); routingControl = null; }
       if (polyline) { map.removeLayer(polyline); polyline = null; }

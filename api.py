@@ -27,9 +27,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+class ThreatConfig(BaseModel):
+    hits: int
+    victimsPerHit: int
+    radius: float
+    duration: float
 
+class ScenarioRequest(BaseModel):
+    scenario: str
+    threatConfig: Optional[ThreatConfig] = None
 # Static and template files
-BASE_DIR = Path("/home/pims/simedis-ui/runSimedis")
+BASE_DIR = Path("/home/pims/SimedisAPI") #change to local API directory
 app.mount("/icons", StaticFiles(directory="icons"), name="icons")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -44,7 +52,7 @@ async def get_index(request: Request):
 @app.get("/db_browser", response_class=HTMLResponse)
 async def db_browser(request: Request):
     now = datetime.now()
-    folder_path = "/home/pims/simedis-ui/runSimedis"
+    folder_path = "/home/pims/SimedisAPI/"
     db_files = [
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
@@ -66,10 +74,19 @@ async def db_browser(request: Request):
 @app.post("/run_scenario")
 async def run_scenario(data: dict = Body(...)):
     scenario_name = data.get("scenario", "demo")
-    julia_script = f"/home/pims/simedis-ui/runSimedis/{scenario_name}.jl"
+    threat_config = data.get("threatConfig")
 
+    julia_script = f"/home/pims/SimedisAPI/{scenario_name}.jl"
     if not os.path.exists(julia_script):
         return JSONResponse(status_code=404, content={"error": f"{julia_script} not found."})
+
+    # Optional: Save threat config to file for the Julia script to read
+    if threat_config:
+        with open("threatConfig.json", "w") as f:
+            json.dump(threat_config, f, indent=2)
+        print(f"[INFO] Saved threat config: {threat_config}")
+    else:
+        print("[INFO] No threatConfig provided")
 
     try:
         result = subprocess.run(
@@ -94,7 +111,7 @@ async def run_scenario(data: dict = Body(...)):
 async def generate_patients_api():
     try:
         result = subprocess.run(
-            ["julia", "/home/pims/simedis-ui/runSimedis/genPatients.jl"],
+            ["julia", "/home/pims/SimedisAPI/genPatients.jl"],
             capture_output=True,
             text=True
         )
@@ -112,7 +129,7 @@ async def generate_patients_api():
 @app.get("/get_victims")
 async def get_victims():
     victims = []
-    victim_files = glob.glob("/home/pims/simedis-ui/runSimedis/victims*.txt")
+    victim_files = glob.glob("/home/pims/SimedisAPI/victims*.txt")
     for file_path in victim_files:
         try:
             with open(file_path, "r") as f:
