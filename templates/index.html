@@ -253,9 +253,10 @@
 
       <a href="/db_browser" aria-label="Browse SQLite Databases">🧠 Browse SQLite Databases</a>
     </section>
-    <section id="configureThreatSection" aria-label="Configure Threat">
+    <section id="threatConfigModal" style="display:none;" aria-label="Configure Threat">
       <h3>Configure Threat</h3>
-
+      <label for="threatId">Threat ID:</label>
+      <input type="text" id="threatId" name="threatId" value="threat1" aria-label="Threat ID" />
       <label for="threatHits">Number of Hits:</label>
       <input type="number" id="threatHits" name="threatHits" min="1" value="3" aria-label="Number of Hits" />
 
@@ -265,10 +266,12 @@
       <label for="threatRadius">Radius of Effect (m):</label>
       <input type="number" id="threatRadius" name="threatRadius" min="1" value="40" aria-label="Threat Radius in meters" />
 
-      <label for="threatDuration">Duration (minutes):</label>
-      <input type="number" id="threatDuration" name="threatDuration" min="1" value="1" aria-label="Threat duration in minutes" />
+      <label for="threatDuration">Scheduled time (minutes):</label>
+      <input type="number" id="threatDuration" name="scheduledTime" min="0.0" value="0.0" aria-label="Scheduled time in minutes" />
 
-      <button type="button" onclick="applyThreatConfig()" aria-label="Apply threat configuration">Apply Threat Configuration</button>
+      
+      <button onclick="saveThreatConfig()" aria-label="Apply threat configuration">Apply</button>
+      <button onclick="closeThreatConfig()">Cancel</button>
     </section>
 
     <section id="status" aria-live="polite" role="status" style="display:none;"></section>
@@ -358,7 +361,7 @@
         reader.readAsText(file);
       });
     }
-
+    let threatCounter = 1;
     function addMarker(e) {
       const type = document.getElementById('type').value;
       let subtype = "";
@@ -367,6 +370,7 @@
       if (type === 'threat') {
         subtype = document.getElementById('threatType').value;
         icon = icons[subtype];
+        const threatId = `threat-${threatCounter++}`;
       } else if (type === 'hospital') {
         subtype = document.getElementById('hospitalType').value;
         icon = icons[subtype];
@@ -378,9 +382,16 @@
       L.marker(e.latlng, { icon }).addTo(map)
         .bindPopup(`${type} (${subtype}) at ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`).openPopup();
 
-      markersData.push({ category: type, subtype, lat: e.latlng.lat, lng: e.latlng.lng });
+      markersData.push({
+      id: threatId,
+      category: type,
+      subtype,
+      lat: e.latlng.lat,
+      lng: e.latlng.lng
+      });
       routePoints.push(L.latLng(e.latlng.lat, e.latlng.lng));
       createRoute();
+      openThreatConfig(threatId);
     }
     function triageColor(triage) {
       switch(triage) {
@@ -392,26 +403,71 @@
       }
     }
     const threatConfig = {
-      hits: 3,
-      victimsPerHit: 13,
-      radius: 40.0
+      threatId: document.getElementById('threatId').value,
+      hits: parseInt(document.getElementById('threatHits').value, 10),
+      victimsPerHit: parseInt(document.getElementById('victimsPerHit').value, 10),
+      radius: parseFloat(document.getElementById('threatRadius').value),
+      scheduledTime: parseFloat(document.getElementById('threatDuration').value)
     };
 
-    function openThreatConfig() {
-      document.getElementById('threatConfigModal').style.display = 'block';
+    function openThreatConfig(threatId, existingConfig = null) {
+      const modal = document.getElementById('threatConfigModal');
+      if (!modal) return;
+
+      // Show modal
+      modal.style.display = 'block';
+
+      // Set threat ID (read-only input)
+      document.getElementById('threatId').value = existingConfig?.threatID !== undefined ? existingConfig.threatID : "threat1";
+
+      // Use existing config if present, otherwise use defaults
+      document.getElementById('threatHits').value =
+        existingConfig?.hits !== undefined ? existingConfig.hits : 3;
+
+      document.getElementById('victimsPerHit').value =
+        existingConfig?.victimsPerHit !== undefined ? existingConfig.victimsPerHit : 13;
+
+      document.getElementById('threatRadius').value =
+        existingConfig?.radius !== undefined ? existingConfig.radius : 40;
+
+      document.getElementById('threatDuration').value =
+        existingConfig?.scheduledTime !== undefined ? existingConfig.scheduledTime : 0.0;
     }
 
+
     function closeThreatConfig() {
-      document.getElementById('threatConfigModal').style.display = 'none';
+      const modal = document.getElementById('threatConfigModal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
     }
 
     function saveThreatConfig() {
-      threatConfig.hits = parseInt(document.getElementById('hitsInput').value);
-      threatConfig.victimsPerHit = parseInt(document.getElementById('victimsPerHitInput').value);
-      threatConfig.radius = parseFloat(document.getElementById('radiusInput').value);
-      
-      alert(`Saved Threat Configuration:\nHits: ${threatConfig.hits}\nVictims/Hit: ${threatConfig.victimsPerHit}\nRadius: ${threatConfig.radius}m`);
-      closeThreatConfig();
+      const threatConfig = {
+        id: document.getElementById('threatId').value,
+        hits: parseInt(document.getElementById('threatHits').value),
+        victimsPerHit: parseInt(document.getElementById('victimsPerHit').value),
+        radius: parseFloat(document.getElementById('threatRadius').value),
+        scheduledTime: parseFloat(document.getElementById('threatDuration').value)
+      };
+
+      fetch('/api/threatconfig', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(threatConfig)
+      })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to save');
+        return response.json();
+      })
+      .then(data => {
+        alert(`Saved Threat Configuration:\nID: ${threatConfig.id}\nHits: ${threatConfig.hits}\nVictims/Hit: ${threatConfig.victimsPerHit}\nRadius: ${threatConfig.radius}m\nScheduled Time: ${threatConfig.scheduledTime}min`);
+        closeThreatConfig();
+      })
+      .catch(error => {
+        console.error('Error saving threat config:', error);
+        alert('Failed to save threat config.');
+      });
     }
     function createRoute() {
       if (routingControl) { map.removeControl(routingControl); routingControl = null; }

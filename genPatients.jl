@@ -20,6 +20,7 @@ consts, paramset = Simedis.constants_from_file("paramsetGen.toml")
 
 
 data =JSON.parsefile("scenario.json")
+threat_config_data = JSON.parsefile("threatconfig.json")
 
 threats = data["threats"]
 ccps = data["ccps"]
@@ -48,7 +49,7 @@ for i in 1:length(locations)
     push!(timeccpFMP,0.0)
 end
 # coords=[locations_LLA,fmp_LLA,ccp_LLA,home_LLA]
-baseoutputname  ="/home/pims/simedis-ui/runSimedis/out.sqlite" # "Output\\000-test"*".sqlite"
+baseoutputname  ="/home/pims/SimedisAPI/out.sqlite" # "Output\\000-test"*".sqlite"
 
 Base.promote_type(::Type{Union{}}, ::Type{String}) = String
   
@@ -64,10 +65,11 @@ treatment_data = []
 global routeG=Vector{Vector{Int}}()
 inputDB = SQLite.DB( consts.inputDBname )
 
+local_sim = Simulation()
 outputDB = Simedis.createOutputDataBase(consts,baseoutputname)
 
 SQLite.execute( outputDB, "BEGIN TRANSACTION" )
-local_sim = Simulation()
+
 local_firefighters = Resource(local_sim, consts.nrFF)
 local_mediclist = Simedis.MedicList(local_sim, paramset.Policy,consts)
 local_ambulist = Simedis.AmbuList(local_sim,paramset)
@@ -79,24 +81,77 @@ local_transportqueue = []
 local_transportqueue1 = []
 local_transportqueueT3 = []
 routesH,local_hospitalQueue = Simedis.CreateHospitalQueue(inputDB, ccp_LLA,m,routesH,paramset,true)
+# Match threat config by ID if present, else use index as string
 for i in 1:length(locations)
+    
     subtype = threats[i]["threatType"]
     threat_type_code = 0
     if subtype == "artillery strike"
         threat_type_code = 1
-    elseif subtype == "GB release"  # GB release
+    elseif subtype == "GB release"
         threat_type_code = 3
     elseif subtype == "drone strike"
         threat_type_code = 6
     else
         @warn "Unknown threat subtype: $subtype"
-        threat_type_code = 1  # default
-    end 
-    if threat_type_code == 1
-        @process Simedis.createThreat(local_sim,threat_type_code,0.0,locationUTM[i],3.0,outputDB,local_firefighters,local_boatlist, local_mediclist, local_ambulist,local_medevac, local_transportqueue, local_transportqueue1,local_transportqueueT3, local_hospitalQueue, paramset, SimScore_plot,treatment_data,consts,inputDB,m,fmp_LLA[i],ccp_LLA[i],homeUTM[i],ccpUTM[i],timeCCPHome[i],timeccpFMP[i],timeFMPHome[i],fmpUTM[i],i,true) 
-    else
-         @process Simedis.createThreat(local_sim,threat_type_code,0.0,locationUTM[i],1.0,outputDB,local_firefighters,local_boatlist, local_mediclist, local_ambulist,local_medevac, local_transportqueue, local_transportqueue1,local_transportqueueT3, local_hospitalQueue, paramset, SimScore_plot,treatment_data,consts,inputDB,m,fmp_LLA[i],ccp_LLA[i],homeUTM[i],ccpUTM[i],timeCCPHome[i],timeccpFMP[i],timeFMPHome[i],fmpUTM[i],i,true) 
+        threat_type_code = 1  # fallback to artillery strike
     end
+
+    # Match threat config by ID if present, else use index as string
+    threat_id = haskey(threats[i], "id") ? string(threats[i]["id"]) : string(i)
+
+    if !haskey(threat_config_data, threat_id)
+        error("Missing threat configuration for threat id: $threat_id in threatconfig.json")
+    end
+
+    threat_conf = threat_config_data[threat_id]
+
+    if !haskey(threat_conf, "numberOfHits")
+        error("Missing 'numberOfHits' for threat id $threat_id in threatconfig.json")
+    end
+
+    if !haskey(threat_conf, "scheduledTime")
+        error("Missing 'scheduledTime' for threat id $threat_id in threatconfig.json")
+    end
+
+    number_of_hits = threat_conf["numberOfHits"]
+    scheduled_time = threat_conf["scheduledTime"]
+    number_of_hits=Float64(number_of_hits)
+    scheduled_time=Float64(scheduled_time)
+
+    @process Simedis.createThreat(
+        local_sim,
+        threat_type_code,
+        scheduled_time,
+        locationUTM[i],
+        number_of_hits,
+        outputDB,
+        local_firefighters,
+        local_boatlist,
+        local_mediclist,
+        local_ambulist,
+        local_medevac,
+        local_transportqueue,
+        local_transportqueue1,
+        local_transportqueueT3,
+        local_hospitalQueue,
+        paramset,
+        SimScore_plot,
+        treatment_data,
+        consts,
+        inputDB,
+        m,
+        fmp_LLA[i],
+        ccp_LLA[i],
+        homeUTM[i],
+        ccpUTM[i],
+        timeCCPHome[i],
+        timeccpFMP[i],
+        timeFMPHome[i],
+        fmpUTM[i],
+        i,
+        true
+    )
 end
 run(local_sim)
 SQLite.execute( outputDB, "COMMIT" )

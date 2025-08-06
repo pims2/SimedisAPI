@@ -28,10 +28,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 class ThreatConfig(BaseModel):
+    id: str
     hits: int
     victimsPerHit: int
     radius: float
     duration: float
+    scheduledTime: float
 
 class ScenarioRequest(BaseModel):
     scenario: str
@@ -70,7 +72,35 @@ async def db_browser(request: Request):
         "now": datetime.now()
     })
 # API to run Julia script
+@app.post("/api/threatconfig")
+async def apply_threat_config(request: Request):
+    data = await request.json()
+    threat_id = str(data.get("id"))
 
+    if not threat_id:
+        return JSONResponse(status_code=400, content={"error": "Missing threat ID"})
+
+    # Load existing config if exists
+    config_path = "threatconfig.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            all_configs = json.load(f)
+    else:
+        all_configs = {}
+
+    # Update/insert the threat config
+    all_configs[threat_id] = {
+        "scheduledTime": data["scheduledTime"],
+        "numberOfHits": data["hits"],
+        "victimsPerHit": data["victimsPerHit"],
+        "radius": data["radius"]
+    }
+
+    # Save all threat configs back
+    with open(config_path, "w") as f:
+        json.dump(all_configs, f, indent=2)
+
+    return JSONResponse(content={"status": "success", "message": f"Saved config for threat {threat_id}"})
 @app.post("/run_scenario")
 async def run_scenario(data: dict = Body(...)):
     scenario_name = data.get("scenario", "demo")
@@ -80,7 +110,7 @@ async def run_scenario(data: dict = Body(...)):
     if not os.path.exists(julia_script):
         return JSONResponse(status_code=404, content={"error": f"{julia_script} not found."})
 
-    # Optional: Save threat config to file for the Julia script to read
+    
     if threat_config:
         with open("threatConfig.json", "w") as f:
             json.dump(threat_config, f, indent=2)
@@ -203,8 +233,7 @@ def get_coords(loc):
 @app.post("/save_coordinates")
 async def save_coordinates(request: Request):
     data = await request.json()
-    print("Received data:", data)  # Debug: what data arrives?
-
+   
     saved_data = {
         "threats": [],
         "ccps": [],
