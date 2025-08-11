@@ -1,3 +1,28 @@
+################################################################################
+# genPatients.jl
+#
+# Description:
+#     Generates simulated patient data for a given scenario by reading threat
+#     configurations, initializing the Simedis simulation environment, creating
+#     threats, running the simulation, and aggregating victims output files into
+#     a single file.
+#
+# Usage:
+#     julia genPatients.jl
+#
+# Dependencies:
+#     CSV, DataFrames, Dates, DelimitedFiles, Logging, OpenStreetMapX, Random,
+#     ResumableFunctions, SQLite, SimJulia, TOML, Simedis, Plots, Geodesy, JSON
+#
+# Author:
+#     [Your Name]
+# Created:
+#     [Date]
+################################################################################
+
+# ==============================
+# Imports
+# ==============================
 using CSV
 using DataFrames
 using Dates
@@ -14,111 +39,147 @@ using Plots
 using Geodesy
 using JSON
 
+# ==============================
+# Global constants & parameters
+# ==============================
 
-global victims=[]
-consts, paramset = Simedis.constants_from_file("paramsetGen.toml")
+global victims = []  # Global list to store victim data
+consts, paramset = Simedis.constants_from_file("paramsetGen.toml")  # Load constants and parameters
 
+# ==============================
+# Load scenario and threat configs
+# ==============================
 
-data =JSON.parsefile("scenario.json")
+data = JSON.parsefile("scenario.json")
 threat_config_data = JSON.parsefile("threatconfig.json")
 
-threats = data["threats"]
-ccps = data["ccps"]
+# Extract relevant scenario components
+threats   = data["threats"]
+ccps      = data["ccps"]
 hospitals = data["hospitals"]
-home = data["home"]
+home      = data["home"]
 
-locations = [threat["coords"] for threat in threats]
-ccp = [ccp_entry["coords"] for ccp_entry in ccps]
-fmp = [hospital["coords"] for hospital in hospitals]
-home_coord = home
-home=[[50.8467, 4.3525],[50.8467, 4.3525]]
-locationUTM,fmpUTM,ccpUTM,homeUTM,ccp_LLA,fmp_LLA,home_LLA,locations_LLA= Simedis.setCoords(locations,ccp,fmp,home,consts.quadrant)
+# Coordinates setup
+locations    = [threat["coords"] for threat in threats]
+ccp          = [ccp_entry["coords"] for ccp_entry in ccps]
+fmp          = [hospital["coords"] for hospital in hospitals]
+home_coord   = home
+home         = [[50.8467, 4.3525], [50.8467, 4.3525]]  # Default fallback home location
 
-m=Simedis.SetMap("bx.osm") #peu importe
+# Convert coordinates to UTM & LLA formats
+locationUTM, fmpUTM, ccpUTM, homeUTM, ccp_LLA, fmp_LLA, home_LLA, locations_LLA =
+    Simedis.setCoords(locations, ccp, fmp, home, consts.quadrant)
 
+# ==============================
+# Map setup
+# ==============================
+m = Simedis.SetMap("bx.osm")  # Load map file
 
+# ==============================
+# Initialize routing & travel times
+# ==============================
 routes = Vector{Vector{Int}}()
 routesH = Vector{Vector{Int}}()
 
 timeCCPHome = []
 timeFMPHome = []
-timeccpFMP = []
-for i in 1:length(locations)
-    push!(timeCCPHome,0.0)
-    push!(timeFMPHome,0.0)
-    push!(timeccpFMP,0.0)
-end
-# coords=[locations_LLA,fmp_LLA,ccp_LLA,home_LLA]
-baseoutputname  ="/home/pims/SimedisAPI/out.sqlite" # "Output\\000-test"*".sqlite"
+timeccpFMP  = []
 
+# Initialize travel times for each threat location
+for i in 1:length(locations)
+    push!(timeCCPHome, 0.0)
+    push!(timeFMPHome, 0.0)
+    push!(timeccpFMP, 0.0)
+end
+
+# ==============================
+# Database setup
+# ==============================
+baseoutputname = "/home/pims/SimedisAPI/out.sqlite"
+
+# Julia quirk fix for empty type promotion in SQLite operations
 Base.promote_type(::Type{Union{}}, ::Type{String}) = String
-  
+
+# Random seed initialization
 randomseeds = [abs(rand(Int32)) for i=1:consts.nrruns]
 Random.seed!(randomseeds[1])
 
-SimScore_plot =[]
-#params_data=[]
-
-
-SimParams=[]
+# Simulation data containers
+SimScore_plot = []
+SimParams = []
 treatment_data = []
-global routeG=Vector{Vector{Int}}()
-inputDB = SQLite.DB( consts.inputDBname )
+global routeG = Vector{Vector{Int}}()
 
+# Input DB connection
+inputDB = SQLite.DB(consts.inputDBname)
+
+# ==============================
+# Simulation environment setup
+# ==============================
 local_sim = Simulation()
-outputDB = Simedis.createOutputDataBase(consts,baseoutputname)
 
-SQLite.execute( outputDB, "BEGIN TRANSACTION" )
+# Create output database
+outputDB = Simedis.createOutputDataBase(consts, baseoutputname)
+SQLite.execute(outputDB, "BEGIN TRANSACTION")
 
+# Resource initialization
 local_firefighters = Resource(local_sim, consts.nrFF)
-local_mediclist = Simedis.MedicList(local_sim, paramset.Policy,consts)
-local_ambulist = Simedis.AmbuList(local_sim,paramset)
-global routesH=Vector{Vector{Int}}()
-patients=[]
-local_boatlist = Simedis.BoatList(local_sim,patients)
-local_medevac = Simedis.Medevac(local_sim)
-local_transportqueue = []
+local_mediclist    = Simedis.MedicList(local_sim, paramset.Policy, consts)
+local_ambulist     = Simedis.AmbuList(local_sim, paramset)
+global routesH     = Vector{Vector{Int}}()
+patients           = []
+local_boatlist     = Simedis.BoatList(local_sim, patients)
+local_medevac      = Simedis.Medevac(local_sim)
+
+# Queues for patient transport
+local_transportqueue  = []
 local_transportqueue1 = []
 local_transportqueueT3 = []
-routesH,local_hospitalQueue = Simedis.CreateHospitalQueue(inputDB, ccp_LLA,m,routesH,paramset,true)
-# Match threat config by ID if present, else use index as string
+
+# Hospital queue setup
+routesH, local_hospitalQueue =
+    Simedis.CreateHospitalQueue(inputDB, ccp_LLA, m, routesH, paramset, true)
+
+# ==============================
+# Threat creation loop
+# ==============================
 for i in 1:length(locations)
-    
+
+    # Map textual threat type to numeric code
     subtype = threats[i]["threatType"]
-    threat_type_code = 0
-    if subtype == "artillery strike"
-        threat_type_code = 1
+    threat_type_code = if subtype == "artillery strike"
+        1
     elseif subtype == "GB release"
-        threat_type_code = 3
+        3
     elseif subtype == "drone strike"
-        threat_type_code = 6
+        6
     else
         @warn "Unknown threat subtype: $subtype"
-        threat_type_code = 1  # fallback to artillery strike
+        1  # Default fallback
     end
 
-    # Match threat config by ID if present, else use index as string
-    threat_id = haskey(threats[i], "id") ? string(threats[i]["id"]) : string(i)
+    # Get threat ID from config or use fallback naming
+    threat_id = haskey(threats[i], "id") ? string(threats[i]["id"]) : "threat$(i)"
 
+    # Validate threat config presence
     if !haskey(threat_config_data, threat_id)
         error("Missing threat configuration for threat id: $threat_id in threatconfig.json")
     end
 
     threat_conf = threat_config_data[threat_id]
 
-    if !haskey(threat_conf, "numberOfHits")
-        error("Missing 'numberOfHits' for threat id $threat_id in threatconfig.json")
+    # Validate required fields in config
+    for key in ["numberOfHits", "scheduledTime"]
+        if !haskey(threat_conf, key)
+            error("Missing '$key' for threat id $threat_id in threatconfig.json")
+        end
     end
 
-    if !haskey(threat_conf, "scheduledTime")
-        error("Missing 'scheduledTime' for threat id $threat_id in threatconfig.json")
-    end
+    # Extract & convert config values
+    number_of_hits = Float64(threat_conf["numberOfHits"])
+    scheduled_time = Float64(threat_conf["scheduledTime"])
 
-    number_of_hits = threat_conf["numberOfHits"]
-    scheduled_time = threat_conf["scheduledTime"]
-    number_of_hits=Float64(number_of_hits)
-    scheduled_time=Float64(scheduled_time)
-
+    # Create threat process in simulation
     @process Simedis.createThreat(
         local_sim,
         threat_type_code,
@@ -153,5 +214,41 @@ for i in 1:length(locations)
         true
     )
 end
+
+# ==============================
+# Run the simulation
+# ==============================
 run(local_sim)
-SQLite.execute( outputDB, "COMMIT" )
+
+# ==============================
+# Victim file aggregation
+# ==============================
+
+# Get all victim files matching victims*.txt
+victim_files = sort(filter(f -> occursin(r"victims\d+\.txt", f), readdir(".")))
+
+# Identify victims1.txt and victimsN.txt where N > 1
+victim1_file     = "victims1.txt"
+victim_files_gt1 = filter(f -> parse(Int, match(r"victims(\d+)\.txt", f).captures[1]) > 1, victim_files)
+
+# Aggregate victims into victimsAll.txt
+open("victimsAll.txt", "w") do outfile
+    # Write victims1.txt content first
+    for line in eachline(victim1_file)
+        println(outfile, line)
+    end
+
+    # Append victims2+.txt content (excluding headers)
+    for file in victim_files_gt1
+        lines = readlines(file)
+        if length(lines) > 1
+            for line in lines[2:end]
+                println(outfile, line)
+            end
+        end
+    end
+end
+
+# Commit simulation results to DB
+SQLite.execute(outputDB, "COMMIT")
+

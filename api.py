@@ -8,14 +8,17 @@ from fastapi import Body
 from typing import List, Optional, Dict, Any
 import subprocess
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 import glob
 import os
 import sqlite3
+import re
 from fastapi import Query
 from fastapi import Form
-import logging
+import asyncio
+
 
 
 app = FastAPI()
@@ -44,6 +47,8 @@ app.mount("/icons", StaticFiles(directory="icons"), name="icons")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # Serve HTML
+
+
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
     return templates.TemplateResponse("index.html", {
@@ -140,15 +145,22 @@ async def run_scenario(data: dict = Body(...)):
 @app.post("/generate_patients")
 async def generate_patients_api():
     try:
-        result = subprocess.run(
-            ["julia", "/home/pims/SimedisAPI/genPatients.jl"],
-            capture_output=True,
-            text=True
+        # Run the Julia script asynchronously
+        process = await asyncio.create_subprocess_exec(
+            "julia", "/home/pims/SimedisAPI/genPatients.jl",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        stdout, stderr = await process.communicate()
+        success = process.returncode == 0
+
+        if success:
+            create_victims_all_file()
+
         return {
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "success": result.returncode == 0
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
+            "success": success
         }
     except Exception as e:
         return {
@@ -156,54 +168,90 @@ async def generate_patients_api():
             "stderr": str(e),
             "success": False
         }
+
+def create_victims_all_file():
+    victim_files = glob.glob("/home/pims/SimedisAPI/victims*.txt")
+    victim_files = [f for f in victim_files if not f.endswith("victimsAll.txt")]
+
+    def extract_number(filename):
+        m = re.search(r'victims(\d+)\.txt$', filename)
+        if m:
+            return int(m.group(1))
+        return 999999  # sort unmatched files last
+
+    victim_files.sort(key=extract_number)
+
+    all_lines = []
+    header = None
+    new_id = 1
+
+    for file_path in victim_files:
+        with open(file_path, "r") as f:
+            lines = f.readlines()
+        if not lines:
+            continue
+
+        file_header = lines[0].strip()
+        if header is None:
+            header = file_header
+            all_lines.append(header + "\n")
+
+        columns = file_header.split("\t")
+        if "victag" not in columns:
+            continue
+        idx_victag = columns.index("victag")
+
+        for line in lines[1:]:
+            parts = line.strip().split("\t")
+            if len(parts) < len(columns):
+                continue
+            # Update victim ID with new sequential ID
+            parts[idx_victag] = str(new_id)
+            new_id += 1
+            all_lines.append("\t".join(parts) + "\n")
+
+    victims_all_path = "/home/pims/SimedisAPI/victimsAll.txt"
+    with open(victims_all_path, "w") as f:
+        f.writelines(all_lines)
+
 @app.get("/get_victims")
 async def get_victims():
     victims = []
-    victim_files = glob.glob("/home/pims/SimedisAPI/victims*.txt")
-    for file_path in victim_files:
-        try:
-            with open(file_path, "r") as f:
-                lines = f.readlines()
-            if not lines:
+    victims_all_path = "/home/pims/SimedisAPI/victimsAll.txt"
+    try:
+        with open(victims_all_path, "r") as f:
+            lines = f.readlines()
+        if not lines:
+            return {"victims": victims}
+
+        headers = {name: idx for idx, name in enumerate(lines[0].strip().split("\t"))}
+        if "viclat" not in headers or "viclon" not in headers:
+            return {"victims": victims}
+
+        for line in lines[1:]:
+            parts = line.strip().split("\t")
+            if len(parts) < len(headers):
+                continue
+            try:
+                lat = float(parts[headers["viclat"]])
+                lng = float(parts[headers["viclon"]])
+                vic_id = parts[headers["victag"]]
+                triage = parts[headers["triage"]] if "triage" in headers else ""
+                iss = parts[headers["ISS"]] if "ISS" in headers else ""
+                victims.append({
+                    "lat": lat,
+                    "lng": lng,
+                    "id": vic_id,
+                    "triage": triage,
+                    "ISS": iss
+                })
+            except:
                 continue
 
-            headers = {name: idx for idx, name in enumerate(lines[0].strip().split("\t"))}
-
-            # Defensive check for expected columns
-            if "viclat" not in headers or "viclon" not in headers:
-                print(f"[WARN] File {file_path} missing 'viclat' or 'viclon'. Headers found: {headers}")
-                continue
-
-            for line in lines[1:]:
-                parts = line.strip().split("\t")
-                if len(parts) < len(headers):
-                    continue
-                try:
-                    lat = float(parts[headers["viclat"]])
-                    lng = float(parts[headers["viclon"]])
-                    vic_id = parts[headers["victag"]]
-                    # Defensive check for valid coordinates
-                    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-                        print(f"[WARN] Skipping victim with out-of-range coordinates: {lat}, {lng}")
-                        continue
-
-                    triage = parts[headers["triage"]] if "triage" in headers else ""
-                    iss = parts[headers["ISS"]] if "ISS" in headers else ""
-                    victims.append({
-                        "lat": lat,
-                        "lng": lng,
-                        "id": vic_id,
-                        "triage": triage,
-                        "ISS": iss
-                    })
-                except Exception as e:
-                    print(f"[ERROR] Parsing line in {file_path}: {line}\nException: {e}")
-        except Exception as e:
-            print(f"[ERROR] Reading file {file_path}: {e}")
+    except:
+        pass
 
     return {"victims": victims}
-
-
 def find_sqlite_files(directory: str):
     return [f for f in os.listdir(directory) if f.endswith(".sqlite")]
 # Scenario location model

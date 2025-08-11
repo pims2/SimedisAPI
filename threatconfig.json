@@ -1,26 +1,14 @@
 {
-  "2": {
-    "scheduledTime": 0,
-    "numberOfHits": 9,
-    "victimsPerHit": 13,
-    "radius": 40
-  },
-  "1": {
-    "scheduledTime": 0,
-    "numberOfHits": 3,
-    "victimsPerHit": 13,
-    "radius": 40
-  },
   "threat1": {
     "scheduledTime": 0,
-    "numberOfHits": 9,
-    "victimsPerHit": 13,
+    "numberOfHits": 12,
+    "victimsPerHit": 10,
     "radius": 40
   },
   "threat2": {
-    "scheduledTime": 0.2,
-    "numberOfHits": 3,
-    "victimsPerHit": 13,
+    "scheduledTime": 0,
+    "numberOfHits": 5,
+    "victimsPerHit": 25,
     "radius": 40
   }
 }

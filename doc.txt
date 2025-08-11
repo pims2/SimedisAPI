@@ -1,0 +1,85 @@
+"""
+genPatients.jl
+--------------
+
+This script generates simulated patient data for a given scenario using the Simedis
+simulation framework. It reads scenario and threat configuration data, initializes
+the simulation environment, creates threats, runs the simulation, and outputs
+victim data and aggregated results.
+
+Main steps:
+-----------
+1. **Imports Required Packages**
+   - Loads Simedis and supporting Julia packages for data handling (CSV, JSON, SQLite, etc.),
+     geographic computation (OpenStreetMapX, Geodesy), plotting, and simulation scheduling.
+
+2. **Load Configuration**
+   - Reads simulation constants and parameters from `paramsetGen.toml`.
+   - Loads scenario data from `scenario.json`:
+     - Threat locations
+     - Casualty Collection Points (CCPs)
+     - Hospitals
+     - Home/base location
+   - Loads threat configuration from `threatconfig.json`:
+     - `numberOfHits`
+     - `scheduledTime`
+   - Threat IDs follow the pattern `threat1`, `threat2`, … in the configuration file.
+
+3. **Coordinate Transformation**
+   - Converts input geographic coordinates (WGS84 lat/lon) to UTM coordinates for simulation.
+   - Prepares coordinate lists for:
+     - Threats
+     - CCPs
+     - Forward Medical Points (FMPs) / hospitals
+     - Home/base location
+
+4. **Simulation Initialization**
+   - Creates a simulation map object from `bx.osm`.
+   - Initializes simulation resources:
+     - Firefighters
+     - Medics
+     - Ambulances
+     - Boats
+     - Medevac units
+   - Builds the hospital queue structure from CCP data.
+
+5. **Threat Creation**
+   - For each threat in the scenario:
+     - Identifies threat type code (e.g., artillery strike, GB release, drone strike).
+     - Looks up matching threat configuration by ID (e.g., `threat3`).
+     - Validates presence of required fields (`numberOfHits`, `scheduledTime`).
+     - Creates a scheduled threat in the simulation with specified parameters.
+
+6. **Run Simulation**
+   - Executes all scheduled events until simulation completion.
+
+7. **Aggregate Victim Data**
+   - After simulation, victim data is written into separate files:
+     - `victims1.txt`, `victims2.txt`, … (one file per threat).
+   - Creates `victimsAll.txt` by:
+     - Copying all content from `victims1.txt` (including header).
+     - Appending all lines (except the header) from `victims2.txt`, `victims3.txt`, etc.
+
+8. **Output**
+   - Writes all simulation results to:
+     - `victimsAll.txt` (aggregated victim list)
+     - `out.sqlite` (SQLite database with simulation output)
+   - Commits all changes to the output database.
+
+File Dependencies:
+------------------
+- **Inputs:**
+  - `paramsetGen.toml`
+  - `scenario.json`
+  - `threatconfig.json`
+  - `bx.osm` (map file)
+  - `inputDB.sqlite` (input database defined in TOML file)
+- **Outputs:**
+  - `victims1.txt`, `victims2.txt`, …
+  - `victimsAll.txt` (aggregated)
+  - `out.sqlite` (simulation results database)
+
+Usage:
+------
+```bash
+julia genPatients.jl
