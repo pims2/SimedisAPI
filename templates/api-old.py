@@ -254,22 +254,19 @@ async def get_victims():
 
     return {"victims": victims}
 
-
-@app.get("/edit_parameters")
-async def edit_parameters(request: Request):
-    return templates.TemplateResponse("edit_parameters.html", {"request": request})
 @app.get("/load_params")
 async def load_params():
     try:
         with open("/home/pims/SimedisAPI/paramsetDemo.toml", "r") as f:
             data = toml.load(f)
-        return JSONResponse(content={
+        result = {
             "Constants": data.get("Constants", {}),
             "Parameterset": data.get("Parameterset", {})
-        })
+        }
+        return JSONResponse(content=result)
     except Exception as e:
-        logging.error(f"Error loading params: {e}")  # Log to console or file
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
 @app.post("/update_params")
@@ -278,6 +275,7 @@ async def update_params(payload: dict = Body(...)):
     with open("/home/pims/SimedisAPI/paramsetDemo.toml", "w") as f:
         toml.dump(payload, f)
     return {"success": True}
+
 def find_sqlite_files(directory: str):
     return [f for f in os.listdir(directory) if f.endswith(".sqlite")]
 # Scenario location model

@@ -245,6 +245,10 @@
       <button type="button" onclick="clearRoute()" aria-label="Clear all markers and routes">Clear Route</button>
       <button type="button" id="plotVictimsBtn" aria-label="Plot victims on map">Plot Victims</button>
       <button type="button" id="loadHospitalsBtn" aria-label="Load hospitals on map">Load Hospitals</button>
+      <button onclick="window.open('/edit_parameters', '_blank')">
+        Edit Scenario Parameters
+      </button>
+            
 
       <label for="includeRoute">
         <input type="checkbox" id="includeRoute" checked />
@@ -283,6 +287,7 @@
     <section id="routeInfo" aria-live="polite" aria-atomic="true">Distance: N/A, ETA: N/A</section>
 
     <section id="loading" style="display:none" aria-live="assertive" aria-atomic="true">Loading victims...</section>
+  
 
     <div id="map" role="application" aria-label="Interactive map"></div>
   </main>
@@ -495,6 +500,7 @@
         polyline = L.polyline(route.coordinates, { color: 'blue' }).addTo(map);
       });
     }
+  
     async function createScenario() {
       const scenarioName = prompt("Enter scenario name (e.g. demo):", "demo");
       if (!scenarioName) return;

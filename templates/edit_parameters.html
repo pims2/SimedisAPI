@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Edit Scenario Parameters</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  label { display: block; margin-top: 10px; font-weight: bold; }
+  input[type="text"], input[type="number"] { width: 100%; max-width: 400px; padding: 5px; }
+  button { margin-top: 20px; padding: 10px 15px; }
+  fieldset { margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+  <h2>Edit Scenario Parameters</h2>
+
+  <section id="paramsConfigModal" aria-label="Edit Scenario Parameters">
+    <fieldset>
+      <legend>Constants</legend>
+      <div id="constantsSection"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Parameterset</legend>
+      <div id="parametersetSection"></div>
+    </fieldset>
+
+    <button id="applyBtn" aria-label="Apply parameters">Apply</button>
+    <button id="cancelBtn" aria-label="Cancel">Cancel</button>
+  </section>
+
+<script>
+  // Create input fields, serializing arrays/objects as JSON strings
+  function createField(key, value, sectionId) {
+    const container = document.getElementById(sectionId);
+
+    const label = document.createElement("label");
+    label.htmlFor = sectionId + "_" + key;
+    label.textContent = key;
+
+    const input = document.createElement("input");
+    input.id = sectionId + "_" + key;
+    input.name = key;
+
+    if (Array.isArray(value) || (typeof value === "object" && value !== null)) {
+      // Show complex types as JSON string
+      input.type = "text";
+      input.value = JSON.stringify(value);
+      input.title = "Edit JSON array or object";
+    } else if (typeof value === "number") {
+      input.type = "number";
+      input.value = value;
+    } else if (typeof value === "boolean") {
+      input.type = "checkbox";
+      input.checked = value;
+    } else {
+      input.type = "text";
+      input.value = value;
+    }
+
+    container.appendChild(label);
+    container.appendChild(input);
+    container.appendChild(document.createElement("br"));
+  }
+
+  // Parse string to original type, tries JSON parse for arrays/objects
+  function parseValue(val) {
+    val = val.trim();
+    if (val === "true") return true;
+    if (val === "false") return false;
+    if (!isNaN(val) && val !== "") return Number(val);
+
+    // Try parse JSON for arrays or objects
+    try {
+      const parsed = JSON.parse(val);
+      if (typeof parsed === "object") return parsed;
+    } catch {
+      // Not JSON, fallback to string
+    }
+    return val;
+  }
+
+  // Load params and create form inputs
+  async function openParamsConfig() {
+    document.getElementById("constantsSection").innerHTML = "";
+    document.getElementById("parametersetSection").innerHTML = "";
+
+    const res = await fetch("/load_params");
+    if (!res.ok) {
+      alert("Failed to load scenario parameters.");
+      return;
+    }
+    const params = await res.json();
+
+    if (params.Constants) {
+      for (const [key, value] of Object.entries(params.Constants)) {
+        createField(key, value, "constantsSection");
+      }
+    }
+    if (params.Parameterset) {
+      for (const [key, value] of Object.entries(params.Parameterset)) {
+        createField(key, value, "parametersetSection");
+      }
+    }
+  }
+
+  // Gather inputs, parse values, POST to update
+  async function applyParamsConfig() {
+    const constants = {};
+    const parameterset = {};
+
+    document.querySelectorAll("#constantsSection input").forEach(input => {
+      if (input.type === "checkbox") {
+        constants[input.name] = input.checked;
+      } else {
+        constants[input.name] = parseValue(input.value);
+      }
+    });
+
+    document.querySelectorAll("#parametersetSection input").forEach(input => {
+      if (input.type === "checkbox") {
+        parameterset[input.name] = input.checked;
+      } else {
+        parameterset[input.name] = parseValue(input.value);
+      }
+    });
+
+    const res = await fetch("/update_params", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Constants: constants, Parameterset: parameterset })
+    });
+
+    if (res.ok) {
+      alert("Scenario parameters updated.");
+      window.close();
+    } else {
+      alert("Failed to update parameters.");
+    }
+  }
+
+  // Cancel button closes window
+  document.getElementById("cancelBtn").addEventListener("click", () => window.close());
+
+  // Apply button sends data
+  document.getElementById("applyBtn").addEventListener("click", applyParamsConfig);
+
+  // Load params on page load
+  window.onload = openParamsConfig;
+</script>
+
+</body>
+</html>

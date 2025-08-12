@@ -39,7 +39,7 @@ coords=[locations_LLA,fmp_LLA,ccp_LLA,home_LLA]
 nSites=length(locations)
 
 inputDB = SQLite.DB(consts.inputDBname)
-m = Simedis.SetMap("demo.osm")
+m = Simedis.SetMap("bx.osm")
 routes = Vector{Vector{Int}}()
 
 routes = Vector{Vector{Int}}()
@@ -68,7 +68,7 @@ SimScore_plot =[]
 SimParams=[]
 treatment_data = []
 global routeG=Vector{Vector{Int}}()
-inputDB = SQLite.DB("InputDB.sqlite")
+inputDB = SQLite.DB(consts.inputDBname)
 
 
 outputDB = Simedis.createOutputDataBase(consts,baseoutputname)
@@ -163,7 +163,7 @@ for nramb in paramset.nrAmbuList
                                                         # custom select simulation run(s)
                                                     
                                                         Simedis.AddOutputOverviewDB(paramset, outputDB, local_mediclist, local_ambulist,consts)
-                                                        #Simedis.reportLocations(inputDB,outputDB,m,paramset,1000,routeG,"bxl",coords,consts,0.0,0.0,true,true) # plot the html file
+                                                        Simedis.reportLocations(inputDB,outputDB,m,paramset,1000,routeG,"bxl",coords,consts,0.0,0.0,true,true) # plot the html file
                                                         
                                                         
                                                     
