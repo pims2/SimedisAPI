@@ -37,15 +37,15 @@ RescueTimeDist = "Normal"
 RescueTimeBound = 0.25
 OtherTimeDist = "Normal"
 OtherTimeBound = 0.2
-disrobetimes = [2.0,1.0]
-passtimes = [1.0,0.33]
-decontimes = [2.33,0.75]
-rerobetimes = [2.4,1.2]
+disrobetimes = [2, 1]
+passtimes = [1, 0.33]
+decontimes = [2.33, 0.75]
+rerobetimes = [2.4, 1.2]
 amst_arrivaltime = 20
 ambushRate = 0.3
 
 [Parameterset]
-policyList = ["StayPlay","ScoopRun"]
+policyList = ["StayPlay", "ScoopRun"]
 tourniquetList = [true]
 pretriageList = [true]
 supervisionList = ["Low"]

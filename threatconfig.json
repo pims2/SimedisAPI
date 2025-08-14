@@ -7,8 +7,8 @@
   },
   "threat2": {
     "scheduledTime": 0,
-    "numberOfHits": 5,
-    "victimsPerHit": 25,
+    "numberOfHits": 3,
+    "victimsPerHit": 13,
     "radius": 40
   }
 }

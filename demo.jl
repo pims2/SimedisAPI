@@ -163,7 +163,7 @@ for nramb in paramset.nrAmbuList
                                                         # custom select simulation run(s)
                                                     
                                                         Simedis.AddOutputOverviewDB(paramset, outputDB, local_mediclist, local_ambulist,consts)
-                                                        Simedis.reportLocations(inputDB,outputDB,m,paramset,1000,routeG,"bxl",coords,consts,0.0,0.0,true,true) # plot the html file
+                                                       # Simedis.reportLocations(inputDB,outputDB,m,paramset,1000,routeG,"waterloo",coords,consts,0.0,0.0,true,true) # plot the html file
                                                         
                                                         
                                                     

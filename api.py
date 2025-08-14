@@ -18,7 +18,7 @@ import re
 from fastapi import Query
 from fastapi import Form
 import asyncio
-import toml
+import tomlkit
 
 
 
@@ -60,7 +60,7 @@ async def get_index(request: Request):
 @app.get("/db_browser", response_class=HTMLResponse)
 async def db_browser(request: Request):
     now = datetime.now()
-    folder_path = "/home/pims/SimedisAPI/"
+    folder_path = BASE_DIR
     db_files = [
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
@@ -112,7 +112,7 @@ async def run_scenario(data: dict = Body(...)):
     scenario_name = data.get("scenario", "demo")
     threat_config = data.get("threatConfig")
 
-    julia_script = f"/home/pims/SimedisAPI/{scenario_name}.jl"
+    julia_script = BASE_DIR / f"{scenario_name}.jl"
     if not os.path.exists(julia_script):
         return JSONResponse(status_code=404, content={"error": f"{julia_script} not found."})
 
@@ -148,7 +148,7 @@ async def generate_patients_api():
     try:
         # Run the Julia script asynchronously
         process = await asyncio.create_subprocess_exec(
-            "julia", "/home/pims/SimedisAPI/genPatients.jl",
+            "julia", str(BASE_DIR / "genPatients.jl"),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -171,7 +171,7 @@ async def generate_patients_api():
         }
 
 def create_victims_all_file():
-    victim_files = glob.glob("/home/pims/SimedisAPI/victims*.txt")
+    victim_files = glob.glob(str(BASE_DIR / "victims*.txt"))
     victim_files = [f for f in victim_files if not f.endswith("victimsAll.txt")]
 
     def extract_number(filename):
@@ -211,14 +211,14 @@ def create_victims_all_file():
             new_id += 1
             all_lines.append("\t".join(parts) + "\n")
 
-    victims_all_path = "/home/pims/SimedisAPI/victimsAll.txt"
+    victims_all_path = BASE_DIR / "victimsAll.txt"
     with open(victims_all_path, "w") as f:
         f.writelines(all_lines)
 
 @app.get("/get_victims")
 async def get_victims():
     victims = []
-    victims_all_path = "/home/pims/SimedisAPI/victimsAll.txt"
+    victims_all_path = BASE_DIR / "victimsAll.txt"
     try:
         with open(victims_all_path, "r") as f:
             lines = f.readlines()
@@ -261,22 +261,24 @@ async def edit_parameters(request: Request):
 @app.get("/load_params")
 async def load_params():
     try:
-        with open("/home/pims/SimedisAPI/paramsetDemo.toml", "r") as f:
-            data = toml.load(f)
+        with open(BASE_DIR / "paramsetDemo.toml", "r") as f:
+            data = tomlkit.parse(f.read())
         return JSONResponse(content={
             "Constants": data.get("Constants", {}),
             "Parameterset": data.get("Parameterset", {})
         })
     except Exception as e:
-        logging.error(f"Error loading params: {e}")  # Log to console or file
+        logging.error(f"Error loading params: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 @app.post("/update_params")
 async def update_params(payload: dict = Body(...)):
-    import toml
-    with open("/home/pims/SimedisAPI/paramsetDemo.toml", "w") as f:
-        toml.dump(payload, f)
+    doc = tomlkit.document()
+    for key, value in payload.items():
+        doc.add(key, value)
+
+    with open(BASE_DIR / "paramsetDemo.toml", "w") as f:
+        f.write(tomlkit.dumps(doc))
+
     return {"success": True}
 def find_sqlite_files(directory: str):
     return [f for f in os.listdir(directory) if f.endswith(".sqlite")]
@@ -355,7 +357,7 @@ async def db_browser_post(
     db_path: str = Form(...),
     table_name: str = Form(None)
 ):
-    folder_path = "/home/pims/simedis-ui/runSimedis"
+    folder_path = BASE_DIR
     db_files = [
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)

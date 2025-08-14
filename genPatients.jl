@@ -44,7 +44,7 @@ using JSON
 # ==============================
 
 global victims = []  # Global list to store victim data
-consts, paramset = Simedis.constants_from_file("paramsetGen.toml")  # Load constants and parameters
+consts, paramset = Simedis.constants_from_file("paramsetDemo.toml")  # Load constants and parameters
 
 # ==============================
 # Load scenario and threat configs
